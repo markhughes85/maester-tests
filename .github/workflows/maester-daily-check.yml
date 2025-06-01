@@ -1,0 +1,58 @@
+name: Daily Maester Conditional Access Check
+
+on:
+  schedule:
+    # Runs daily at 9:00 AM UTC (adjust timezone as needed)
+    - cron: '0 9 * * *'
+  workflow_dispatch: # Allows manual triggering
+
+jobs:
+  run-maester-tests:
+    runs-on: windows-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+    
+    - name: Install PowerShell modules
+      shell: powershell
+      run: |
+        Install-Module -Name Maester -Force -AllowClobber
+        Install-Module -Name Microsoft.Graph -Force -AllowClobber
+        Install-Module -Name Pester -Force -AllowClobber
+    
+    - name: Connect to Microsoft Graph
+      shell: powershell
+      run: |
+        $clientId = "${{ secrets.AZURE_CLIENT_ID }}"
+        $tenantId = "${{ secrets.AZURE_TENANT_ID }}"
+        
+        
+        Connect-MgGraph -ClientId $clientId -TenantId $tenantId -ClientSecretCredential $credential
+    
+    - name: Run Maester Tests
+      shell: powershell
+      run: |
+        # Run your specific test
+        Invoke-Pester -Path "./tests/AzureMark.ConditionalAccess.Tests.ps1" -OutputFormat NUnitXml -OutputFile "TestResults.xml"
+    
+    - name: Publish Test Results
+      uses: dorny/test-reporter@v1
+      if: always()
+      with:
+        name: Maester Test Results
+        path: TestResults.xml
+        reporter: dotnet-nunit
+    
+    - name: Notify on failure
+      if: failure()
+      uses: actions/github-script@v7
+      with:
+        script: |
+          github.rest.issues.create({
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            title: 'Daily Maester Check Failed',
+            body: 'The daily conditional access policy check has failed. Please review the workflow logs.',
+            labels: ['bug', 'security']
+          })
