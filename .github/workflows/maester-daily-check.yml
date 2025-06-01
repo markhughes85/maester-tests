@@ -1,4 +1,4 @@
-name: Daily Maester Conditional Access Check 🔥
+name: Non Admin Users Blocked from Admin Portal 
 
 on:
   push:
