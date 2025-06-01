@@ -1,58 +1,84 @@
-name: Daily Maester Conditional Access Check
+name: Daily Maester Conditional Access Check 🔥
 
 on:
+  push:
+    branches:
+      - main
   schedule:
-    # Runs daily at 9:00 AM UTC (adjust timezone as needed)
-    - cron: '0 9 * * *'
-  workflow_dispatch: # Allows manual triggering
+    # Daily at 9:00 AM UTC (adjust timezone as needed)
+    - cron: "0 9 * * *"
+  # Allows to run this workflow manually from the Actions tab
+  workflow_dispatch:
 
 jobs:
-  run-maester-tests:
-    runs-on: windows-latest
-    
+  test:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+      issues: write  # Added for issue creation on failure
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-    
-    - name: Install PowerShell modules
-      shell: powershell
-      run: |
-        Install-Module -Name Maester -Force -AllowClobber
-        Install-Module -Name Microsoft.Graph -Force -AllowClobber
-        Install-Module -Name Pester -Force -AllowClobber
-    
-    - name: Connect to Microsoft Graph
-      shell: powershell
-      run: |
-        $clientId = "${{ secrets.AZURE_CLIENT_ID }}"
-        $tenantId = "${{ secrets.AZURE_TENANT_ID }}"
-        
-        
-        Connect-MgGraph -ClientId $clientId -TenantId $tenantId -ClientSecretCredential $credential
-    
-    - name: Run Maester Tests
-      shell: powershell
-      run: |
-        # Run your specific test
-        Invoke-Pester -Path "./tests/AzureMark.ConditionalAccess.Tests.ps1" -OutputFormat NUnitXml -OutputFile "TestResults.xml"
-    
-    - name: Publish Test Results
-      uses: dorny/test-reporter@v1
-      if: always()
-      with:
-        name: Maester Test Results
-        path: TestResults.xml
-        reporter: dotnet-nunit
-    
-    - name: Notify on failure
-      if: failure()
-      uses: actions/github-script@v7
-      with:
-        script: |
-          github.rest.issues.create({
-            owner: context.repo.owner,
-            repo: context.repo.repo,
-            title: 'Daily Maester Check Failed',
-            body: 'The daily conditional access policy check has failed. Please review the workflow logs.',
-            labels: ['bug', 'security']
-          })
+      - name: Run Maester 🔥
+        id: maester
+        uses: maester365/maester-action@main
+        with:
+          tenant_id: ${{ secrets.AZURE_TENANT_ID }}
+          client_id: ${{ secrets.AZURE_CLIENT_ID }}
+          include_public_tests: false  # Only run your custom test
+          include_private_tests: true  # Run your custom test
+          include_exchange: false
+          include_teams: false
+          maester_version: latest
+          disable_telemetry: false
+          step_summary: true
+      
+      - name: Write test results 📃
+        shell: bash
+        run: |
+          echo "## Test Results Summary" >> $GITHUB_STEP_SUMMARY
+          echo "- **Result**: ${{ steps.maester.outputs.result }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Total tests**: ${{ steps.maester.outputs.tests_total }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Passed tests**: ${{ steps.maester.outputs.tests_passed }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Failed tests**: ${{ steps.maester.outputs.tests_failed }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Skipped tests**: ${{ steps.maester.outputs.tests_skipped }}" >> $GITHUB_STEP_SUMMARY
+          
+          echo "The result of the test run is: ${{ steps.maester.outputs.result }}"
+          echo "Total tests: ${{ steps.maester.outputs.tests_total }}"
+          echo "Passed tests: ${{ steps.maester.outputs.tests_passed }}"
+          echo "Failed tests: ${{ steps.maester.outputs.tests_failed }}"
+          echo "Skipped tests: ${{ steps.maester.outputs.tests_skipped }}"
+      
+      - name: Create issue on failure 🚨
+        if: steps.maester.outputs.result == 'Failed'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const title = `Daily Conditional Access Check Failed - ${new Date().toISOString().split('T')[0]}`;
+            const body = `## Conditional Access Policy Check Failed ❌
+            
+            The daily check for conditional access policies has failed.
+            
+            ### Test Results:
+            - **Total tests**: ${{ steps.maester.outputs.tests_total }}
+            - **Passed tests**: ${{ steps.maester.outputs.tests_passed }}
+            - **Failed tests**: ${{ steps.maester.outputs.tests_failed }}
+            - **Skipped tests**: ${{ steps.maester.outputs.tests_skipped }}
+            
+            ### Action Required:
+            1. Review the [workflow run logs](${context.payload.repository.html_url}/actions/runs/${context.runId})
+            2. Check if the conditional access policy "Block access to the Azure portal for non-admin users" is properly configured
+            3. Verify that the user 'berry.green@azuremark.co' exists and the policy applies correctly
+            
+            ### Workflow Details:
+            - **Run ID**: ${context.runId}
+            - **Triggered by**: ${context.eventName}
+            - **Branch**: ${context.ref}
+            `;
+            
+            github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: title,
+              body: body,
+              labels: ['bug', 'security', 'conditional-access']
+            });
